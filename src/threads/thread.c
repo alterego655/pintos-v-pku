@@ -21,6 +21,8 @@
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
+#define INITIAL_LOAD_AVG 0
+
 /** List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -43,25 +45,16 @@ static fp_t load_avg;  /* System load average (fixed-point) */
 /* Array of 64 ready queues, one for each priority level */
 static struct list ready_queues[PRI_MAX + 1];
 
-/* Bitmap to track which queues have threads */
-static unsigned ready_priorities[2];  /* 64 bits total */
-
-/* Current highest ready priority */
-static int highest_ready_priority;
-
 static int ready_treads_count;  /* Number of threads in ready state */
 
-/* Set bit corresponding to priority level */
-#define SET_PRIORITY_BIT(priority) \
-  ready_priorities[(priority) / 32] |= (1 << ((priority) % 32))
- 
-/* Clear bit corresponding to priority level */
-#define CLEAR_PRIORITY_BIT(priority) \
-  ready_priorities[(priority) / 32] &= ~(1 << ((priority) % 32))
-
-/* Test if priority level has any threads */
-#define TEST_PRIORITY_BIT(priority) \
-  (ready_priorities[(priority) / 32] & (1 << ((priority) % 32)))
+/* Find highest priority with ready threads */
+static int find_highest_priority(void) {
+  for (int i = PRI_MAX; i >= PRI_MIN; i--) {
+    if (!list_empty(&ready_queues[i]))
+      return i;
+  }
+  return PRI_MIN - 1;
+}
 
 /** Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
@@ -104,34 +97,13 @@ bool thread_priority_compare(const struct list_elem *a, const struct list_elem *
   return t1->priority > t2->priority;
 }
 
-static void
-highest_priority_check(void *aux UNUSED)
-{
-  if (!thread_mlfqs) {
-    return;
-  }
-  struct list_elem *e;
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
-    struct thread *t = list_entry(e, struct thread, allelem);
-    if (t->status == THREAD_READY && t != idle_thread) {
-      /* Assert that highest_ready_priority is at least as high as this thread's priority */
-      ASSERT(t->priority <= highest_ready_priority);
-    }
-  }
-}
-
 /* Add a thread to its priority queue atomically */
 static void
 ready_queue_add(struct thread *t)
 {
   list_push_back(&ready_queues[t->priority], &t->elem);
-  SET_PRIORITY_BIT(t->priority);
 
   ready_treads_count++;
- 
-  /* Update highest priority atomically */
-  if (t->priority > highest_ready_priority)
-    highest_ready_priority = t->priority;
 }
 
 /* Remove and return highest priority thread atomically */
@@ -141,25 +113,10 @@ ready_queue_remove_highest(void)
   struct thread *t = NULL;
   
   /* Find highest non-empty queue */
-  if (highest_ready_priority >= PRI_MIN) {
-    /* Use cached highest priority */
-    t = list_entry(list_pop_front(&ready_queues[highest_ready_priority]), 
+  int highest = find_highest_priority();
+  if (highest >= PRI_MIN) {
+    t = list_entry(list_pop_front(&ready_queues[highest]), 
                   struct thread, elem);
-                  
-    /* If queue is now empty, clear bit and update highest */
-    if (list_empty(&ready_queues[highest_ready_priority])) {
-      CLEAR_PRIORITY_BIT(highest_ready_priority);
-      
-      /* Find new highest priority */
-      int new_highest = PRI_MIN - 1;
-      for (int i = highest_ready_priority - 1; i >= PRI_MIN; i--) {
-        if (TEST_PRIORITY_BIT(i)) {
-          new_highest = i;
-          break;
-        }
-      }
-      highest_ready_priority = new_highest;
-    }
   }
   if (t) {
     ready_treads_count--;
@@ -174,32 +131,8 @@ ready_queue_change_priority(struct thread *t, int old_priority)
     /* Remove from old queue */
     list_remove(&t->elem);
     
-    /* Clear the bit if queue is now empty */
-    if (list_empty(&ready_queues[old_priority])) {
-      /* Clear the bit for the old priority */
-      /* and update highest priority if needed */
-      CLEAR_PRIORITY_BIT(old_priority);
-      
-      /* Update highest priority if it was this queue */
-      if (old_priority == highest_ready_priority) {
-        int new_highest = PRI_MIN - 1;
-        for (int i = highest_ready_priority - 1; i >= PRI_MIN; i--) {
-          if (TEST_PRIORITY_BIT(i)) {
-            new_highest = i;
-            break;
-          }
-        }
-        highest_ready_priority = new_highest;
-      }
-    }
-    
     /* Add to new queue */
     list_push_back(&ready_queues[t->priority], &t->elem);
-    SET_PRIORITY_BIT(t->priority);
-    
-    /* Update highest priority if needed */
-    if (t->priority > highest_ready_priority)
-      highest_ready_priority = t->priority;
 }
 
 static void save_old_priority(struct thread *t, void *aux UNUSED) 
@@ -304,7 +237,7 @@ void update_priority(void)
   
   // Check if current thread should yield to a higher priority thread
   struct thread *current = thread_current();
-  if (current != idle_thread && highest_ready_priority > current->priority) {
+  if (current != idle_thread && find_highest_priority() > current->priority) {
     if (intr_context()) {
       intr_yield_on_return();
     } else {
@@ -342,10 +275,7 @@ thread_init (void)
     list_init(&ready_queues[i]);
   }
 
-  load_avg = INT_TO_FP(0);  /* Initialize to 0 as fixed-point */
-  ready_priorities[0] = 0;
-  ready_priorities[1] = 0;
-  highest_ready_priority = PRI_MIN - 1; 
+  load_avg = INT_TO_FP(INITIAL_LOAD_AVG);  /* Initialize to 0 as fixed-point */
   ready_treads_count = 0;
 
   /* Set up a thread structure for the running thread. */
@@ -613,7 +543,7 @@ check_yield(void)
     return;
 
   /* Simply check if highest_ready_priority is greater than current priority */
-  if (highest_ready_priority > current->priority) {
+  if (find_highest_priority() > current->priority) {
     
     /* Yield to the higher priority thread */
     if (intr_context()) {
