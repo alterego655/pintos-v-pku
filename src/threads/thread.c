@@ -21,6 +21,8 @@
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
+#define INITIAL_LOAD_AVG 0
+
 /** List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -115,68 +117,26 @@ recalculate_priority (struct thread *t, void *aux UNUSED)
   t->priority = priority;
 }
 
-void update_cpu_usage(void) {
+void update_cpu_usage(void) 
+{
   // Count ready threads
-  int running_count = 0;
-  int ready_count = 0;
-  int blocked_count = 0;
-  int dying_count = 0;
-  struct list_elem *e;
-  int ready_threads = 0;
   struct thread *current = thread_current();
-  /*
+  
   int ready_threads = list_size(&ready_list);
-  if (current != idle_thread)
+  if (current != idle_thread && current->status == THREAD_RUNNING)
     ready_threads++;
-  */
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
-    struct thread *t = list_entry(e, struct thread, allelem);
-    if (t->status == THREAD_RUNNING) {
-      running_count++;
-    }
-    else if (t->status == THREAD_READY) {
-      ready_count++;
-      ready_threads++;
-    }
-    else if (t->status == THREAD_BLOCKED) {
-      blocked_count++;
-    }
-    else if (t->status == THREAD_DYING) {
-      dying_count++;
-    }
-  }
-  if (current != idle_thread) {
-    ready_threads++;
-  }
-
+  
   // Calculate load_avg in steps
   fp_t term1 = MUL_FP_FP(DIV_FP_FP(INT_TO_FP(59), INT_TO_FP(60)), load_avg);
   fp_t term2 = MUL_FP_FP(DIV_FP_FP(INT_TO_FP(1), INT_TO_FP(60)), INT_TO_FP(ready_threads));
   load_avg = ADD_FP_FP(term1, term2);
-
-   // Only print detailed breakdown around the problematic time period (ticks between 45-55 seconds)
-  int64_t current_ticks = timer_ticks();
-    printf("DETAILED [%lld s]: running=%d, ready=%d, blocked=%d, dying=%d, total=%d\n", 
-           current_ticks / TIMER_FREQ,
-           running_count, ready_count, blocked_count, dying_count,
-           running_count + ready_count + blocked_count + dying_count);
-    
-    // Log first few thread states in all_list
-    int count = 0;
-    for (e = list_begin(&all_list); e != list_end(&all_list) && count < 5; e = list_next(e), count++) {
-      struct thread *t = list_entry(e, struct thread, allelem);
-      if (t != idle_thread) {
-        printf("Thread[%s]: status=%d, priority=%d, nice=%d\n", 
-               t->name, t->status, t->priority, t->nice);
-      }
-    }
-  
   
   // Update recent_cpu for all threads
   thread_foreach(recalculate_recent_cpu, NULL);
 }
 
-void update_recent_cpu(void) {
+void update_recent_cpu(void) 
+{
   struct thread *current = thread_current();
   // Every tick: Increment recent_cpu for the running thread
   // Skip if it's the idle thread
@@ -185,11 +145,10 @@ void update_recent_cpu(void) {
   }
 }
 
-void update_priority(void) {
+void update_priority(void) 
+{
   // Recalculate priority for all threads
   thread_foreach(recalculate_priority, NULL);
-
-  // list_sort(&ready_list, thread_priority_compare, NULL);
 
   struct thread *current = thread_current();
   
@@ -228,7 +187,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
-  load_avg = INT_TO_FP(0);  /* Initialize to 0 as fixed-point */
+  load_avg = INT_TO_FP(INITIAL_LOAD_AVG);  /* Initialize to 0 as fixed-point */
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -374,30 +333,19 @@ thread_unblock (struct thread *t)
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
 
- 
- list_insert_ordered(&ready_list, &t->elem, thread_priority_compare, NULL);
- // list_sort(&ready_list, thread_priority_compare, NULL);
+  list_insert_ordered(&ready_list, &t->elem, thread_priority_compare, NULL);
 
- t->status = THREAD_READY;
+  t->status = THREAD_READY;
   
-
-    // printf("current thread_name, priority: %s, %d\n", thread_current()->name, thread_current()->priority);
-    // printf("unblocked thread_name, priority: %s, %d\n", t->name, t->priority);
-    if (thread_current()->tid != t->tid && thread_current()->priority < t->priority) {
-      if (intr_context()) {
-        intr_yield_on_return();
-      } else {
-        // printf("not in interrupt context\n");
-        if (thread_current() != idle_thread) {
-          //printf("thread_unblock: thread_current() != idle_thread\n");
-          //printf("current thread_name, priority: %s, %d\n", thread_current()->name, thread_current()->priority);
-          //printf("unblocked thread_name, priority: %s, %d\n", t->name, t->priority);
-          thread_yield();
-        }
+  if (thread_current()->tid != t->tid && thread_current()->priority < t->priority) {
+    if (intr_context()) {
+      intr_yield_on_return();
+    } else {
+      if (thread_current() != idle_thread) {
+        thread_yield();
       }
-      
-    } 
-  
+    }
+  } 
   intr_set_level (old_level);
 }
 
@@ -470,7 +418,6 @@ thread_yield (void)
     list_insert_ordered(&ready_list, &cur->elem, thread_priority_compare, NULL);  
   }
 
-  // list_sort(&ready_list, thread_priority_compare, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -723,7 +670,6 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    // list_sort(&ready_list, thread_priority_compare, NULL);
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 

@@ -147,7 +147,6 @@ sema_up (struct semaphore *sema)
     list_sort(&sema->waiters, thread_priority_compare, NULL);
     unblocked_thread = list_entry(list_pop_front(&sema->waiters), 
                                 struct thread, elem);
-   // printf("unblocking thread: %s, priority in up: %d\n", unblocked_thread->name, unblocked_thread->priority);
     thread_unblock(unblocked_thread);
   }
 
@@ -240,10 +239,8 @@ void donate_priority(struct thread *t, int priority) {
 
 void reset_priority(struct thread *t)
 {
-  // printf("priority reset name: %s, priority: %d, and base priority is: %d\n", t->name, t->priority, t->base_priority);
   // Reset to base priority first
   t->priority = t->base_priority;
-  
   
   if (list_empty(&t->locks)) {
     return;
@@ -260,11 +257,7 @@ void reset_priority(struct thread *t)
       }
     }
   }
-  
 
-  // printf("resetting priority in reset_priority\n");
-  // printf("thread_name, priority, base priority in reset_priority: %s, %d, %d\n", t->name, t->priority, t->base_priority);
-  // If this thread holds no more locks, we're done
 }
 
 
@@ -290,16 +283,10 @@ lock_acquire (struct lock *lock)
   
   if (!thread_mlfqs) {
     if (holder != NULL) {
-      // If current thread has higher priority than holder, donate priority
-      // printf("current thread_name, priority in acquire: %s, %d\n", current->name, current->priority);
-      // printf("holder thread_name, priority in acquire: %s, %d\n", holder->name, holder->priority);
       if (current->priority > holder->priority) {
         // Donate priority to holder
         nested_donation_depth = 0;  // Initialize donation depth counter
         donate_priority(holder, current->priority);
-        // printf("Yield to other process to run in acquire.\n");
-        // printf("current thread_name, priority in acquire: %s, %d\n", current->name, current->priority);
-        // printf("holder thread_name, priority in acquire: %s, %d\n", holder->name, holder->priority);
         thread_yield();
       }
     }
@@ -308,8 +295,6 @@ lock_acquire (struct lock *lock)
   // Try to acquire the lock
   sema_down(&lock->semaphore);
 
-  // printf("thread %s, priority %d has aquired the lock successfully", current->name, current->priority);
-  
   // After acquiring the lock
   current->waiting_lock = NULL;
   lock->holder = current;
@@ -353,14 +338,8 @@ lock_release(struct lock *lock) {
   struct thread *current = thread_current();
   
   int old_priority = current->priority;
-  if (!thread_mlfqs) {
-    // Get old priority before reset
-
-    
+  if (!thread_mlfqs) {      
     if (current->is_donating) {
-      // printf("resetting priority in release\n");
-      // printf("current thread_name, priority in release: %s, %d\n", current->name, current->priority);
-      // printf("holder thread_name, priority in release: %s, %d\n", lock->holder->name, lock->holder->priority);
       reset_priority(current);
     }
   }
@@ -371,12 +350,9 @@ lock_release(struct lock *lock) {
   if (!thread_mlfqs) {
       // If our priority decreased, yield to let higher priority threads run
     if (!intr_context() && current->priority < old_priority) {
-      // printf("Yield to other process to run in release.\n");
-      // printf("current thread_name, priority in release: %s, %d\n", current->name, current->priority);
       thread_yield();
     } 
   }
-  // printf("thread %s, priority %d has released the lock successfully", current->name, current->priority);
 }
 
 /** Returns true if the current thread holds LOCK, false

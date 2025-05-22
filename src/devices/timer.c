@@ -199,15 +199,13 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  //printf("Timer interrupt\n");
   
   struct list wakeup_list;
   list_init(&wakeup_list);
 
   // MLFQS scheduler update logic
-  if (thread_mlfqs) {
-    struct thread *current = thread_current();
-    
+  if (thread_mlfqs) 
+  {    
     update_recent_cpu();
     // Every second (when ticks % TIMER_FREQ == 0)
     if (ticks % TIMER_FREQ == 0) {
