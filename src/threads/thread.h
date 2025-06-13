@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 #include "fix-point.h"
 
 /** States in a thread's life cycle. */
@@ -18,6 +19,22 @@ enum thread_status {
    You can redefine this to whatever type you like. */
 typedef int tid_t;
 #define TID_ERROR ((tid_t)-1) /**< Error value for tid_t. */
+
+/** Per-child status record for parent-child process management.
+    Lives in heap memory outside either thread's kernel stack. */
+struct child_status {
+  tid_t child_tid;                  /**< Child's thread ID - fixed at creation */
+  bool load_done;                   /**< True when child finishes start_process() loading */
+  bool load_ok;                     /**< True if child loaded successfully */
+  bool child_exited;                /**< True when child calls exit() */
+  bool parent_exited_first;         /**< True when parent calls exit() first */
+  bool parent_waited;               /**< True if parent has already called wait() once */
+  int exit_code;                    /**< Exit status set in exit() */
+  struct semaphore load_sema;       /**< 0 -> parent blocks until child finishes loading */
+  struct semaphore exit_sema;       /**< 0 -> parent blocks in wait() until child exits */
+  struct list_elem elem;            /**< List element for parent's children list */
+  char process_name[16];
+};
 
 /** Thread priorities. */
 #define PRI_MIN 0      /**< Lowest priority. */
@@ -96,22 +113,23 @@ struct thread {
 #ifdef USERPROG
   /* Owned by userprog/process.c. */
   uint32_t *pagedir; /**< Page directory. */
+  
+  bool is_user_process;
+  /* Parent-child process management */
+  struct list children;              /**< List of child_status structs for this parent */
+  struct child_status *self_status;  /**< Pointer to this thread's status record (if child) */
+  tid_t parent_tid;                  /**< Parent's thread ID (TID_ERROR if no parent) */
 #endif
 
   int64_t wait_ticks;
-
   struct list locks;
-
   struct lock *waiting_lock;
-
   bool is_donating;
 
   /* Owned by thread.c. */
   unsigned magic; /**< Detects stack overflow. */
-
   int nice;                       /* Niceness between -20 and 20 */
-  
-  fp_t recent_cpu;       /* Recent CPU usage (fixed-point) */
+  fp_t recent_cpu;       /* Recent CPU usage (fixed-point) */ 
 };
 
 /** If false (default), use round-robin scheduler.

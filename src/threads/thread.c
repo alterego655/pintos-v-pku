@@ -397,8 +397,17 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
-  list_remove (&thread_current()->allelem);
-  thread_current ()->status = THREAD_DYING;
+  struct thread *cur = thread_current();
+
+  list_remove (&cur->allelem);
+  cur->status = THREAD_DYING;
+  if (cur->self_status != NULL) {
+    cur->self_status->child_exited = true;
+    if (cur->self_status->parent_exited_first) {
+      child_status_destroy(cur->self_status);
+    }
+  }
+  cur->self_status = NULL;
   schedule ();
   NOT_REACHED ();
 }
@@ -641,6 +650,14 @@ init_thread (struct thread *t, const char *name, int priority)
   t->waiting_lock = NULL;
   t->wait_ticks = 0;
   t->is_donating = false;
+  
+#ifdef USERPROG
+  /* Initialize child status management fields */
+  list_init (&t->children);
+  t->self_status = NULL;
+  t->parent_tid = TID_ERROR;
+#endif
+
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);

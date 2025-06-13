@@ -3,7 +3,9 @@
 
 #include <list.h>
 #include <stdbool.h>
-#include "threads/thread.h"
+
+/* Forward declaration */
+struct thread;
 
 /** A counting semaphore. */
 struct semaphore 
