@@ -398,16 +398,17 @@ thread_exit (void)
      when it calls thread_schedule_tail(). */
   intr_disable ();
   struct thread *cur = thread_current();
-
   list_remove (&cur->allelem);
   cur->status = THREAD_DYING;
-  if (cur->self_status != NULL) {
-    cur->self_status->child_exited = true;
-    if (cur->self_status->parent_exited_first) {
-      child_status_destroy(cur->self_status);
+
+  if (cur->self_status != NULL) 
+    {
+      cur->self_status->child_exited = true;
+      if (cur->self_status->parent_exited_first) 
+          child_status_destroy(cur->self_status);
     }
-  }
   cur->self_status = NULL;
+
   schedule ();
   NOT_REACHED ();
 }
@@ -655,7 +656,8 @@ init_thread (struct thread *t, const char *name, int priority)
   /* Initialize child status management fields */
   list_init (&t->children);
   t->self_status = NULL;
-  t->parent_tid = TID_ERROR;
+  for (int i = 0; i < FD_CNT; i++) 
+    t->fd_table[i] = NULL;
 #endif
 
   old_level = intr_disable ();

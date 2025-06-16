@@ -41,6 +41,8 @@ struct child_status {
 #define PRI_DEFAULT 31 /**< Default priority. */
 #define PRI_MAX 63     /**< Highest priority. */
 
+#define FD_CNT 128 /**< Maximum number of file descriptors per process. */
+
 /** A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -115,10 +117,11 @@ struct thread {
   uint32_t *pagedir; /**< Page directory. */
   
   bool is_user_process;
+  struct file *fd_table[FD_CNT];
+  struct file *exec_file;
   /* Parent-child process management */
   struct list children;              /**< List of child_status structs for this parent */
   struct child_status *self_status;  /**< Pointer to this thread's status record (if child) */
-  tid_t parent_tid;                  /**< Parent's thread ID (TID_ERROR if no parent) */
 #endif
 
   int64_t wait_ticks;

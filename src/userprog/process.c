@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -30,6 +31,8 @@ struct exec_info {
   struct child_status *child_status;
 };
 
+
+
 /** Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -48,6 +51,7 @@ process_execute (const char *file_name)
       free(info);
       return TID_ERROR;
     }
+    
   strlcpy (info->file_name, file_name, PGSIZE);
   
   info->child_status = child_status_create();
@@ -62,9 +66,7 @@ process_execute (const char *file_name)
 
   if (tid == TID_ERROR)
     {
-      child_status_destroy(info->child_status);
-      free(info);
-      return TID_ERROR;
+      goto error;
     }
 
   sema_down(&info->child_status->load_sema);
@@ -72,9 +74,7 @@ process_execute (const char *file_name)
   ASSERT(info->child_status->load_done);
   if (!info->child_status->load_ok)
     {
-      child_status_destroy(info->child_status);
-      free(info);
-      return TID_ERROR;
+      goto error;
     }
 
   info->child_status->child_tid = tid;
@@ -82,6 +82,11 @@ process_execute (const char *file_name)
   
   free(info);
   return tid;
+
+error:
+  child_status_destroy(info->child_status);
+  free(info);
+  return TID_ERROR;
 }
 
 /** A thread function that loads a user process and starts it
@@ -109,12 +114,12 @@ start_process (void *info_)
     thread_exit ();
   }
 
+  struct thread *cur = thread_current();
   info->child_status->load_ok = true;
   info->child_status->load_done = true;
-  info->child_status->child_tid = thread_current()->tid;
+  info->child_status->child_tid = cur->tid;
   sema_up(&info->child_status->load_sema);
 
-  struct thread *cur = thread_current();
   cur->is_user_process = true;
   cur->self_status = info->child_status;
 
@@ -185,6 +190,32 @@ process_exit (void)
   
   if (cur->is_user_process)
     printf ("%s: exit(%d)\n", cur->self_status->process_name, cur->self_status->exit_code);
+  
+  if (cur->self_status != NULL)
+    {
+      cur->self_status->child_exited = true;
+      sema_up (&cur->self_status->exit_sema); /* Wake up waiting parent */
+    }
+
+  fs_lock_acquire();
+  /* Close executable file first */
+  if (cur->exec_file != NULL)
+    {
+      file_allow_write(cur->exec_file);
+      file_close(cur->exec_file);
+      cur->exec_file = NULL;
+    }
+
+  for (int i = 2; i < FD_CNT; i++)
+    {
+      struct file *file = cur->fd_table[i];
+      if (file != NULL)
+        {
+          file_close(file);
+          cur->fd_table[i] = NULL;
+        }
+    }
+  fs_lock_release();
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -317,16 +348,20 @@ load (const char *file_name, void (**eip) (void), void **esp)
   
   char *process_name;
   char *save_ptr;
-
   process_name = strtok_r(file_name_copy, " ", &save_ptr);
-
+  
+  fs_lock_acquire();
   /* Open executable file. */
   file = filesys_open (process_name);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", process_name);
+      fs_lock_release();
       goto done; 
     }
+  t->exec_file = file;
+  file_deny_write(file);
+  fs_lock_release();
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -413,7 +448,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* We arrive here whether the load is successful or not. */
   if (file_name_copy != NULL)
     free (file_name_copy);
-  file_close (file);
+  
+  // DON'T close the file here if load was successful!
+  if (!success && file != NULL)
+    {
+      t->exec_file = NULL;
+      file_close (file);
+    }
   return success;
 }
 
@@ -653,7 +694,6 @@ child_status_create ()
     return NULL;
     
   cs->child_tid = TID_ERROR;
-
   cs->load_ok = false;
   cs->child_exited = false;
   cs->parent_waited = false;
@@ -699,13 +739,13 @@ child_status_destroy (struct child_status *cs)
 }
 
 /** Cleans up all child status records for a thread.
-    Should be called when a thread exits. */
+    Should be called when a process exits. */
 void
 child_status_cleanup (struct thread *t)
 {
   struct list_elem *e, *next;
   
-  /* Clean up all child status records this thread owns */
+  /* Clean up all child status records this process owns */
   for (e = list_begin (&t->children); e != list_end (&t->children); e = next)
     {
       next = list_next (e);
