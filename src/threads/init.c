@@ -29,6 +29,8 @@
 #include "userprog/gdt.h"
 #include "userprog/syscall.h"
 #include "userprog/tss.h"
+#include "vm/frame.h"
+#include "vm/swap.h"
 #else
 #include "tests/threads/tests.h"
 #endif
@@ -99,6 +101,11 @@ pintos_init (void)
   palloc_init (user_page_limit);
   malloc_init ();
   paging_init ();
+  
+#ifdef USERPROG
+  /* Initialize frame table. */
+  frame_table_init ();
+#endif
 
   /* Segmentation. */
 #ifdef USERPROG
@@ -130,6 +137,10 @@ pintos_init (void)
   /* Initialize file system. */
   ide_init ();
   locate_block_devices ();
+  
+  /* Initialize swap table after block devices are located. */
+  swap_init ();
+  
   filesys_init (format_filesys);
 #endif
 

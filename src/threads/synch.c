@@ -144,7 +144,6 @@ sema_up (struct semaphore *sema)
 
   if (!list_empty(&sema->waiters)) {
     // Unblock the highest priority waiter
-    list_sort(&sema->waiters, thread_priority_compare, NULL);
     unblocked_thread = list_entry(list_pop_front(&sema->waiters), 
                                 struct thread, elem);
     thread_unblock(unblocked_thread);

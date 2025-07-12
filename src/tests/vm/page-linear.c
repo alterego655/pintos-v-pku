@@ -15,7 +15,7 @@ test_main (void)
 {
   struct arc4 arc4;
   size_t i;
-
+ 
   /* Initialize to 0x5a. */
   msg ("initialize");
   memset (buf, 0x5a, sizeof buf);
