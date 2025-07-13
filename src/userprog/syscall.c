@@ -942,7 +942,7 @@ mmap_unmap_pages(struct mmap_entry *mmap)
           if (entry->status == PAGE_LOADED && entry->kpage != NULL)
             {
               /* Check if page is dirty */
-              if (frame_is_dirty(entry->kpage))
+              if (pagedir_is_dirty(cur->pagedir, entry->vaddr))
                 {
                   /* Write back to file */
                   fs_lock_acquire();
