@@ -719,7 +719,7 @@ handle_close (struct intr_frame *f)
 /* Helper functions for memory mapping */
 static struct mmap_entry *mmap_lookup(mapid_t mapid);
 static bool mmap_is_valid_addr(void *addr, size_t length);
-static void mmap_unmap_pages(struct mmap_entry *mmap);
+void mmap_unmap_pages(struct mmap_entry *mmap);
 
 static void
 handle_mmap (struct intr_frame *f)
@@ -926,7 +926,7 @@ mmap_is_valid_addr(void *addr, size_t length)
 }
 
 /* Unmap pages for a memory mapping */
-static void
+void
 mmap_unmap_pages(struct mmap_entry *mmap)
 {
   struct thread *cur = thread_current();

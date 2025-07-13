@@ -211,28 +211,7 @@ process_exit (void)
       struct mmap_entry *mmap = list_entry(e, struct mmap_entry, elem);
       
       /* Unmap pages and write back dirty pages */
-      for (size_t i = 0; i < mmap->page_count; i++)
-        {
-          void *page_addr = (uint8_t *)mmap->start_addr + i * PGSIZE;
-          struct spt_entry *entry = spt_lookup(&cur->spt, page_addr);
-          
-          if (entry != NULL && entry->status == PAGE_LOADED && entry->kpage != NULL)
-            {
-              /* Check if page is dirty and write back */
-              if (pagedir_is_dirty(cur->pagedir, entry->vaddr))
-                {
-                  fs_lock_acquire();
-                  file_write_at(entry->file, entry->kpage, 
-                               entry->read_bytes, entry->file_offset);
-                  fs_lock_release();
-                }
-            }
-        }
-      
-      /* Close file and free mapping */
-      fs_lock_acquire();
-      file_close(mmap->file);
-      fs_lock_release();
+      mmap_unmap_pages(mmap);
       free(mmap);
     }
   
