@@ -152,11 +152,6 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  /* Debug info for page fault */
-  // printf("PAGE_FAULT: tid=%d addr=%p user=%d write=%d present=%d esp=%p\n",
-  //       thread_current()->tid, fault_addr, user, write, !not_present, 
-  //       user ? (void*)f->esp : thread_current()->user_esp);
-
   /* Helper macro for consistent error handling */
   #define HANDLE_FAULT_ERROR() do { \
     if (user) { \
