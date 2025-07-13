@@ -807,7 +807,7 @@ handle_mmap (struct intr_frame *f)
       off_t offset = i * PGSIZE;
       size_t read_bytes = (i == page_count - 1) ? 
                          (file_size - i * PGSIZE) : PGSIZE;
-                               
+
       /* Create SPT entry */
       struct spt_entry *entry = spt_create_entry(page_addr, PAGE_MMAP, true);
       if (entry == NULL)
@@ -942,7 +942,7 @@ mmap_unmap_pages(struct mmap_entry *mmap)
           if (entry->status == PAGE_LOADED && entry->kpage != NULL)
             {
               /* Check if page is dirty */
-              if (pagedir_is_dirty(cur->pagedir, entry->vaddr))
+              if (frame_is_dirty(entry->kpage))
                 {
                   /* Write back to file */
                   fs_lock_acquire();

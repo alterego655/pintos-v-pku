@@ -39,26 +39,25 @@ struct mmap_entry {
 
 /* Supplemental page table entry */
 struct spt_entry {
+    /* Hot path fields - frequently accessed together */
     void *vaddr;                    /* Virtual address (page-aligned) */
-    enum page_type type;            /* Type of page */
-    enum page_status status;        /* Current status */
-    bool writable;                  /* Whether page is writable */
+    void *kpage;                    /* Kernel page address when loaded */
     
     /* File-backed page information */
     struct file *file;              /* File backing this page (NULL for stack) */
     off_t file_offset;              /* Offset in file */
     size_t read_bytes;              /* Bytes to read from file */
-    
-    /* Memory mapping information (for PAGE_MMAP) */
-    mapid_t mapid;                  /* Mapping ID if this is an mmap page */
-    
-    /* Frame information */
-    void *kpage;                    /* Kernel page address when loaded */
-    
-    /* Swap information */
     swap_slot_t swap_slot;          /* Swap slot number (if swapped) */
     
-    /* Hash table and list elements */
+    /* 4-byte fields grouped together */
+    enum page_type type;            /* Type of page */
+    enum page_status status;        /* Current status */
+    mapid_t mapid;                  /* Mapping ID if this is an mmap page */
+    
+    /* Small fields at the end */
+    bool writable;                  /* Whether page is writable */
+    
+    /* Hash table linkage */
     struct hash_elem hash_elem;     /* For SPT hash table */
 };
 
