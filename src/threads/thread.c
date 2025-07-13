@@ -399,7 +399,6 @@ thread_exit (void)
   intr_disable ();
   struct thread *cur = thread_current();
   list_remove (&cur->allelem);
-  cur->status = THREAD_DYING;
 
   if (cur->self_status != NULL) 
     {
@@ -407,7 +406,9 @@ thread_exit (void)
       if (cur->self_status->parent_exited_first) 
           child_status_destroy(cur->self_status);
     }
+
   cur->self_status = NULL;
+  cur->status = THREAD_DYING;
 
   schedule ();
   NOT_REACHED ();

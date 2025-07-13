@@ -19,6 +19,8 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "vm/frame.h"
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -30,8 +32,6 @@ struct exec_info {
   char *file_name;
   struct child_status *child_status;
 };
-
-
 
 /** Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -103,6 +103,21 @@ start_process (void *info_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
+  
+  /* Initialize supplemental page table. */
+  spt_init(&thread_current()->spt);
+  
+  struct thread *cur = thread_current();
+  
+  /* Initialize stack metadata - will be set properly in setup_stack */
+  cur->stack_bottom = NULL;
+  cur->stack_size = 0;
+  cur->user_esp = NULL;
+  
+  /* Initialize memory mapping tracking */
+  list_init(&cur->mmap_list);
+  cur->next_mapid = 1;  /* Start mapping IDs from 1 */
+  
   success = load (info->file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
@@ -113,8 +128,7 @@ start_process (void *info_)
     sema_up(&info->child_status->load_sema);
     thread_exit ();
   }
-
-  struct thread *cur = thread_current();
+  
   info->child_status->load_ok = true;
   info->child_status->load_done = true;
   info->child_status->child_tid = cur->tid;
@@ -184,12 +198,46 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-
-  /* Clean up all child status records we own (parent process) */
-  child_status_cleanup (cur);
   
   if (cur->is_user_process)
-    printf ("%s: exit(%d)\n", cur->self_status->process_name, cur->self_status->exit_code);
+    {
+      printf ("%s: exit(%d)\n", cur->self_status->process_name, cur->self_status->exit_code);
+    }
+  
+  /* Clean up memory mappings before destroying SPT */
+  while (!list_empty(&cur->mmap_list))
+    {
+      struct list_elem *e = list_pop_front(&cur->mmap_list);
+      struct mmap_entry *mmap = list_entry(e, struct mmap_entry, elem);
+      
+      /* Unmap pages and write back dirty pages */
+      for (size_t i = 0; i < mmap->page_count; i++)
+        {
+          void *page_addr = (uint8_t *)mmap->start_addr + i * PGSIZE;
+          struct spt_entry *entry = spt_lookup(&cur->spt, page_addr);
+          
+          if (entry != NULL && entry->status == PAGE_LOADED && entry->kpage != NULL)
+            {
+              /* Check if page is dirty and write back */
+              if (pagedir_is_dirty(cur->pagedir, entry->vaddr))
+                {
+                  fs_lock_acquire();
+                  file_write_at(entry->file, entry->kpage, 
+                               entry->read_bytes, entry->file_offset);
+                  fs_lock_release();
+                }
+            }
+        }
+      
+      /* Close file and free mapping */
+      fs_lock_acquire();
+      file_close(mmap->file);
+      fs_lock_release();
+      free(mmap);
+    }
+  
+  /* Clean up all child status records we own (parent process) */
+  child_status_cleanup (cur);
   
   if (cur->self_status != NULL)
     {
@@ -197,7 +245,14 @@ process_exit (void)
       sema_up (&cur->self_status->exit_sema); /* Wake up waiting parent */
     }
 
-  fs_lock_acquire();
+  /* Destroy supplemental page table */
+  if (cur->pagedir != NULL)
+    spt_destroy(&cur->spt);
+
+  bool lock_held = fs_lock_held_by_current_thread();
+  if (!lock_held)
+    fs_lock_acquire();
+
   /* Close executable file first */
   if (cur->exec_file != NULL)
     {
@@ -350,7 +405,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
   char *save_ptr;
   process_name = strtok_r(file_name_copy, " ", &save_ptr);
   
-  fs_lock_acquire();
+  bool lock_held = fs_lock_held_by_current_thread();
+  if (!lock_held)
+    {
+      fs_lock_acquire();
+    } 
   /* Open executable file. */
   file = filesys_open (process_name);
   if (file == NULL) 
@@ -529,7 +588,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
+  off_t file_offset = ofs;
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -537,31 +596,35 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
          and zero the final PAGE_ZERO_BYTES bytes. */
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
+      
+      /* Calculate how much of total zero_bytes this page consumes */
+      size_t zero_bytes_used = zero_bytes < page_zero_bytes ? zero_bytes : page_zero_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
+      /* Create SPT entry for lazy loading */
+      enum page_type type = writable ? PAGE_DATA : PAGE_EXECUTABLE;
+      struct spt_entry *entry = spt_create_entry(upage, type, writable);
+      if (entry == NULL)
         return false;
 
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+      /* Set file data for this page */
+      if (!spt_set_file_data(entry, file, file_offset, page_read_bytes, page_zero_bytes))
         {
-          palloc_free_page (kpage);
-          return false; 
+          free(entry);
+          return false;
         }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
+      /* Insert entry into SPT */
+      if (!spt_insert(&thread_current()->spt, entry))
         {
-          palloc_free_page (kpage);
-          return false; 
+          free(entry);
+          return false;
         }
 
       /* Advance. */
       read_bytes -= page_read_bytes;
-      zero_bytes -= page_zero_bytes;
+      zero_bytes -= zero_bytes_used;
       upage += PGSIZE;
+      file_offset += page_read_bytes;
     }
   return true;
 }
@@ -571,7 +634,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp, const char *file_name) 
 {
-  uint8_t *kpage;
   bool success = false;
   char *file_to_split = malloc(strlen(file_name) + 1);
   
@@ -580,14 +642,23 @@ setup_stack (void **esp, const char *file_name)
     
   strlcpy(file_to_split, file_name, strlen(file_name) + 1);
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
+  /* Create SPT entry for initial stack page */
+  void *stack_page = ((uint8_t *) PHYS_BASE) - PGSIZE;
+  struct spt_entry *entry = spt_create_entry(stack_page, PAGE_STACK, true);
+  if (entry != NULL && spt_insert(&thread_current()->spt, entry))
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = PHYS_BASE;
-      else
-        palloc_free_page (kpage);
+      /* Load the stack page immediately since we need to set up arguments */
+      if (spt_load_page(entry))
+        {
+          success = true;
+          *esp = PHYS_BASE;
+          
+          /* Update stack metadata to be consistent */
+          struct thread *cur = thread_current();
+          cur->stack_bottom = PHYS_BASE;           /* Bottom is top of user space */
+          cur->stack_size = PGSIZE;                /* One page allocated */
+          cur->user_esp = PHYS_BASE;               /* Initial ESP at top */
+        }
     }
 
   if (success)

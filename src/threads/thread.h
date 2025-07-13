@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include "threads/synch.h"
 #include "fix-point.h"
+#ifdef USERPROG
+#include "lib/kernel/hash.h"
+#endif
 
 /** States in a thread's life cycle. */
 enum thread_status {
@@ -19,6 +22,13 @@ enum thread_status {
    You can redefine this to whatever type you like. */
 typedef int tid_t;
 #define TID_ERROR ((tid_t)-1) /**< Error value for tid_t. */
+
+/** Map region identifier for memory mapped files. */
+#ifndef MAPID_T_DEFINED
+#define MAPID_T_DEFINED
+typedef int mapid_t;
+#endif
+#define MAP_FAILED ((mapid_t) -1) /**< Error value for mapid_t. */
 
 /** Per-child status record for parent-child process management.
     Lives in heap memory outside either thread's kernel stack. */
@@ -115,6 +125,16 @@ struct thread {
 #ifdef USERPROG
   /* Owned by userprog/process.c. */
   uint32_t *pagedir; /**< Page directory. */
+  struct hash spt;   /**< Supplemental page table. */
+  
+  /* Stack growth tracking */
+  void *stack_bottom;        /**< Bottom of stack (highest address) */
+  size_t stack_size;         /**< Current stack size in bytes */
+  void *user_esp;            /**< Last known user ESP for kernel faults */
+  
+  /* Memory mapping tracking */
+  struct list mmap_list;     /**< List of memory mappings */
+  mapid_t next_mapid;        /**< Next mapping ID to assign */
   
   bool is_user_process;
   struct file *fd_table[FD_CNT];
