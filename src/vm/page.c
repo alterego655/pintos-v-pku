@@ -150,18 +150,12 @@ spt_load_page(struct spt_entry *entry)
     case PAGE_NOT_LOADED:
         /* Load from file or zero-fill */
         success = load_from_file_or_zero(entry, kpage);
-        //printf("load_from_file_or_zero: upage=%p, kpage=%p, first=%02x last=%02x\n", entry->vaddr, kpage,
-        //       ((uint8_t*)kpage)[0], ((uint8_t*)kpage)[PGSIZE-1]);
         break;
         
     case PAGE_SWAPPED:
         /* Load from swap */
         ASSERT(entry->swap_slot != SWAP_ERROR);
-        //printf("swap_read before: upage=%p, kpage=%p, slot=%zu, first=%02x last=%02x\n", entry->vaddr, kpage, entry->swap_slot,
-        //        ((uint8_t*)kpage)[0], ((uint8_t*)kpage)[PGSIZE-1]);
         swap_read(entry->swap_slot, kpage);
-        //printf ("swap_read done: upage=%p, kpage=%p, slot=%zu, first=%02x last=%02x\n", entry->vaddr, kpage, entry->swap_slot,
-        //        ((uint8_t*)kpage)[0], ((uint8_t*)kpage)[PGSIZE-1]);
         swap_free(entry->swap_slot);
         entry->swap_slot = SWAP_ERROR;
         success = true;
@@ -181,9 +175,6 @@ spt_load_page(struct spt_entry *entry)
             struct frame_entry *fe = frame_lookup(kpage);
             if (fe != NULL) {
                 frame_clear_dirty(fe);
-                //printf("LOAD page:  upage=%p kpage=%p type=%d first=%02x last=%02x - dirty bit cleared\n",
-                //       entry->vaddr, kpage, entry->type,
-                //       ((uint8_t*)kpage)[0], ((uint8_t*)kpage)[PGSIZE-1]);
             }
         } else {
             success = false;

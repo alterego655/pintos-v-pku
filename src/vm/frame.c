@@ -73,8 +73,6 @@ frame_alloc(enum palloc_flags flags, void *upage)
         return kpage;
     }
     /* No free frames - try eviction */
-    //  printf("FRAME_PRESSURE: tid=%d upage=%p total_frames=%zu need_eviction\n",
-    //       thread_current()->tid, upage, frame_count);
     return frame_evict_and_allocate(flags, upage);
 }
 
@@ -351,21 +349,14 @@ frame_evict(struct frame_entry *victim, void *new_upage)
         } else {
 
             swap_write(slot, victim->kpage);
-           // printf("swap_write: upage=%p, kpage=%p, slot=%zu, first=%02x last=%02x\n",
-           //     victim->upage, victim->kpage, slot,
-           //     ((uint8_t*)victim->kpage)[0], ((uint8_t*)victim->kpage)[PGSIZE-1]);
             spt_entry->swap_slot = slot;
             spt_entry->status = PAGE_SWAPPED;
             /* Clear dirty bit since page is now clean in swap */
             frame_clear_dirty(victim);
-            // printf("SWAP   upage=%p slot=%zu - dirty bit cleared after swap write\n",
-               //    victim->upage, slot);
         }
     } else {
         /* File-backed clean page - no write needed */
         spt_entry->status = PAGE_NOT_LOADED;
-       // printf("FILE-BACKED upage=%p kpage=%p - does not need swap\n",
-         //          victim->upage, victim->kpage);
     }
     
     /* Update SPT */

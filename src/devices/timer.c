@@ -109,7 +109,6 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  // printf("timer_sleep\n");
   int64_t start = timer_ticks ();
   struct thread *cur = thread_current();
 
