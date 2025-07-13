@@ -1,0 +1,7 @@
+FAIL
+Kernel panic in run: PANIC at ../../filesys/filesys.c:22 in filesys_init(): No file system device found, can't initialize file system.
+Call stack: 0xc002a582 0xc0030280 0xc00203b4
+Translation of call stack:
+0xc002a582: debug_panic (.../../lib/kernel/debug.c:38)
+0xc0030280: filesys_init (..../../filesys/filesys.c:24)
+0xc00203b4: pintos_init (.../../../threads/init.c:144)
