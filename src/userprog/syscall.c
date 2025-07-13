@@ -226,19 +226,6 @@ ensure_page_loaded (const void *uaddr)
   return spt_load_page(entry);
 }
 
-/* Pin user pages for the duration of a copy operation */
-/* Release syscall locks held by current thread */
-void
-release_syscall_locks(void)
-{
-  /* Release filesystem lock if held by current thread */
-  if (fs_lock_held_by_current_thread()) {
-    fs_lock_release();
-  }
-  
-  /* Add other locks here if needed in the future */
-}
-
 static void
 pin_user_pages_for_copy (const void *start, size_t size)
 {
@@ -820,8 +807,7 @@ handle_mmap (struct intr_frame *f)
       off_t offset = i * PGSIZE;
       size_t read_bytes = (i == page_count - 1) ? 
                          (file_size - i * PGSIZE) : PGSIZE;
-      size_t zero_bytes = PGSIZE - read_bytes;
-      
+                               
       /* Create SPT entry */
       struct spt_entry *entry = spt_create_entry(page_addr, PAGE_MMAP, true);
       if (entry == NULL)
@@ -831,7 +817,7 @@ handle_mmap (struct intr_frame *f)
         }
       
       /* Set file data */
-      if (!spt_set_file_data(entry, mapped_file, offset, read_bytes, zero_bytes))
+      if (!spt_set_file_data(entry, mapped_file, offset, read_bytes))
         {
           free(entry);
           success = false;

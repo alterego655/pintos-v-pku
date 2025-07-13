@@ -16,8 +16,7 @@ typedef int mapid_t;
 
 /* Page types */
 enum page_type {
-    PAGE_EXECUTABLE,        /* Code segment page */
-    PAGE_DATA,             /* Data segment page */
+    PAGE_FILE,             /* File-backed page (code/data) */
     PAGE_STACK,            /* Stack page */
     PAGE_MMAP              /* Memory-mapped file page */
 };
@@ -49,7 +48,6 @@ struct spt_entry {
     struct file *file;              /* File backing this page (NULL for stack) */
     off_t file_offset;              /* Offset in file */
     size_t read_bytes;              /* Bytes to read from file */
-    size_t zero_bytes;              /* Bytes to zero-fill */
     
     /* Memory mapping information (for PAGE_MMAP) */
     mapid_t mapid;                  /* Mapping ID if this is an mmap page */
@@ -62,7 +60,6 @@ struct spt_entry {
     
     /* Hash table and list elements */
     struct hash_elem hash_elem;     /* For SPT hash table */
-    struct list_elem list_elem;     /* For process page list */
 };
 
 /* SPT operations */
@@ -77,7 +74,7 @@ void spt_remove(struct hash *spt, void *vaddr);
 
 /* File-backed page setup */
 bool spt_set_file_data(struct spt_entry *entry, struct file *file, 
-                       off_t offset, size_t read_bytes, size_t zero_bytes);
+                       off_t offset, size_t read_bytes);
 
 /* Page loading */
 bool spt_load_page(struct spt_entry *entry);

@@ -22,7 +22,6 @@ static struct hash_iterator clock_iter;
 static bool clock_iter_initialized = false;
 
 /* Forward declarations */
-static void frame_emergency_eviction(void);
 static unsigned frame_hash(const struct hash_elem *e, void *aux);
 static bool frame_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 
@@ -130,25 +129,6 @@ frame_is_user_page(void *kpage)
     return frame_lookup(kpage) != NULL;
 }
 
-/* Get current number of allocated frames */
-size_t
-frame_get_count(void)
-{
-    size_t count;
-    lock_acquire(&frame_table_lock);
-    count = frame_count;
-    lock_release(&frame_table_lock);
-    return count;
-}
-
-/* Print frame table statistics */
-void
-frame_print_stats(void)
-{
-    size_t count = frame_get_count();
-    printf("Frame table: %zu user frames allocated\n", count);
-}
-
 /* Hash function for frame table */
 static unsigned
 frame_hash(const struct hash_elem *e, void *aux UNUSED)
@@ -180,8 +160,6 @@ frame_evict_and_allocate(enum palloc_flags flags, void *upage)
     struct frame_entry *victim = frame_find_victim();
     if (victim == NULL) {
         lock_release(&frame_table_lock);
-        /* Try to make some progress by unpinning temporarily pinned frames */
-        frame_emergency_eviction();
         return NULL;
     }
     
@@ -306,11 +284,6 @@ frame_evict(struct frame_entry *victim, void *new_upage)
     /* Decide where to write page */
     bool dirty = frame_is_dirty(victim);
     
-    /* Debug log for eviction */
-    bool accessed = frame_was_accessed(victim);
-    // printf ("EVICT frame: upage=%p dirty=%d accessed=%d slot?=%d type=%d\n",
-    //         victim->upage, dirty, accessed, spt_entry->swap_slot, spt_entry->type);
-    
     pagedir_clear_page(owner->pagedir, victim->upage);
     
     bool need_swap = false;
@@ -321,13 +294,8 @@ frame_evict(struct frame_entry *victim, void *new_upage)
         need_swap = true;
         break;
         
-    case PAGE_EXECUTABLE:
-        /* Code pages: only swap if dirty (shouldn't happen normally) */
-        need_swap = dirty;
-        break;
-        
-    case PAGE_DATA:
-        /* Data pages: swap if dirty, otherwise can reload from file */
+    case PAGE_FILE:
+        /* File-backed pages: always swap when evicted */
         need_swap = true;
         break;
         
@@ -362,14 +330,14 @@ frame_evict(struct frame_entry *victim, void *new_upage)
         if (slot == SWAP_ERROR) {
             /* Swap full or unavailable - try emergency eviction */
             printf("Eviction: No swap available for %s page at %p\n", 
-                   spt_entry->type == PAGE_STACK ? "stack" : "data", victim->upage);
+                   spt_entry->type == PAGE_STACK ? "stack" : "file", victim->upage);
             
             /* For stack pages without swap, we have to lose the data */
             if (spt_entry->type == PAGE_STACK) {
                 printf("Warning: Discarding stack page data (will be zero-filled on next access)\n");
                 spt_entry->status = PAGE_NOT_LOADED;
             } else {
-                /* For data pages, if they have a file backing, discard dirty changes */
+                /* For file pages, if they have a file backing, discard dirty changes */
                 if (spt_entry->file != NULL) {
                     printf("Warning: Discarding dirty changes to file-backed page\n");
                     spt_entry->status = PAGE_NOT_LOADED;
@@ -473,17 +441,3 @@ frame_unpin(struct frame_entry *entry)
     entry->pinned = false;
     lock_release(&frame_table_lock);
 }
-
-/* Emergency eviction - try to free up memory when no frames are evictable */
-static void
-frame_emergency_eviction(void)
-{
-    /* Print diagnostic information */
-    printf("Emergency eviction: no evictable frames found\n");
-    printf("Frame table size: %zu frames\n", frame_count);
-    printf("Swap available: %s\n", swap_is_available() ? "yes" : "no");
-    
-    if (swap_is_available()) {
-        printf("Swap free slots: %zu\n", swap_get_free_slots());
-    }
-} 

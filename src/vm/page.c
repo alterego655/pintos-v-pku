@@ -55,7 +55,6 @@ spt_create_entry(void *vaddr, enum page_type type, bool writable)
     entry->file = NULL;
     entry->file_offset = 0;
     entry->read_bytes = 0;
-    entry->zero_bytes = 0;
     
     /* Frame information */
     entry->kpage = NULL;
@@ -115,16 +114,15 @@ spt_remove(struct hash *spt, void *vaddr)
 /* Set file data for file-backed pages */
 bool
 spt_set_file_data(struct spt_entry *entry, struct file *file, 
-                  off_t offset, size_t read_bytes, size_t zero_bytes)
+                  off_t offset, size_t read_bytes)
 {
     ASSERT(entry != NULL);
     ASSERT(file != NULL);
-    ASSERT(read_bytes + zero_bytes <= PGSIZE);
+    ASSERT(read_bytes <= PGSIZE);
     
     entry->file = file;
     entry->file_offset = offset;
     entry->read_bytes = read_bytes;
-    entry->zero_bytes = zero_bytes;
     
     return true;
 }
@@ -207,10 +205,9 @@ spt_load_page(struct spt_entry *entry)
 static bool
 load_from_file_or_zero(struct spt_entry *entry, void *kpage)
 {
-    // printf("entry type: %d\n", entry->type);
+    size_t zero_bytes = PGSIZE - entry->read_bytes;
     switch (entry->type) {
-    case PAGE_EXECUTABLE:
-    case PAGE_DATA:
+    case PAGE_FILE:
         /* File-backed page */
         ASSERT(entry->file != NULL);
         
@@ -223,8 +220,8 @@ load_from_file_or_zero(struct spt_entry *entry, void *kpage)
         }
         
         /* Zero remaining bytes */
-        if (entry->zero_bytes > 0) {
-            memset(kpage + entry->read_bytes, 0, entry->zero_bytes);
+        if (zero_bytes > 0) {
+            memset(kpage + entry->read_bytes, 0, zero_bytes);
         }
         
         return true;
@@ -245,10 +242,9 @@ load_from_file_or_zero(struct spt_entry *entry, void *kpage)
                 return false;
             }
         }
-        
-        /* Zero remaining bytes */
-        if (entry->zero_bytes > 0) {
-            memset(kpage + entry->read_bytes, 0, entry->zero_bytes);
+      
+        if (zero_bytes > 0) {
+            memset(kpage + entry->read_bytes, 0, zero_bytes);
         }
         
         return true;
@@ -315,7 +311,7 @@ spt_print_entry(struct spt_entry *entry)
            
     if (entry->file != NULL) {
         printf("  file data: offset=%d, read_bytes=%zu, zero_bytes=%zu\n",
-               (int) entry->file_offset, entry->read_bytes, entry->zero_bytes);
+               (int) entry->file_offset, entry->read_bytes, PGSIZE - entry->read_bytes);
     }
     
     if (entry->kpage != NULL) {
