@@ -30,57 +30,58 @@ enum page_status {
 
 /* Memory mapping entry for mmap/munmap tracking */
 struct mmap_entry {
-    mapid_t mapid;                      /* Unique mapping identifier */
-    struct file *file;                  /* File being mapped */
-    void *start_addr;                   /* Starting virtual address */
-    size_t page_count;                  /* Number of pages in mapping */
-    struct list_elem elem;              /* For process mmap list */
+  mapid_t mapid;                      /* Unique mapping identifier */
+  struct file *file;                  /* File being mapped */
+  void *start_addr;                   /* Starting virtual address */
+  size_t page_count;                  /* Number of pages in mapping */
+  struct list_elem elem;              /* For process mmap list */
 };
 
 /* Supplemental page table entry */
 struct spt_entry {
-    /* Hot path fields - frequently accessed together */
-    void *vaddr;                    /* Virtual address (page-aligned) */
-    void *kpage;                    /* Kernel page address when loaded */
-    
-    /* File-backed page information */
-    struct file *file;              /* File backing this page (NULL for stack) */
-    off_t file_offset;              /* Offset in file */
-    size_t read_bytes;              /* Bytes to read from file */
-    swap_slot_t swap_slot;          /* Swap slot number (if swapped) */
-    
-    /* 4-byte fields grouped together */
-    enum page_type type;            /* Type of page */
-    enum page_status status;        /* Current status */
-    mapid_t mapid;                  /* Mapping ID if this is an mmap page */
-    
-    /* Small fields at the end */
-    bool writable;                  /* Whether page is writable */
-    
-    /* Hash table linkage */
-    struct hash_elem hash_elem;     /* For SPT hash table */
+  /* Hot path fields - frequently accessed together */
+  void *vaddr;                    /* Virtual address (page-aligned) */
+  void *kpage;                    /* Kernel page address when loaded */
+  
+  /* File-backed page information */
+  struct file *file;              /* File backing this page (NULL for stack) */
+  off_t file_offset;              /* Offset in file */
+  size_t read_bytes;              /* Bytes to read from file */
+  swap_slot_t swap_slot;          /* Swap slot number (if swapped) */
+  
+  /* 4-byte fields grouped together */
+  enum page_type type;            /* Type of page */
+  enum page_status status;        /* Current status */
+  mapid_t mapid;                  /* Mapping ID if this is an mmap page */
+  
+  /* Small fields at the end */
+  bool writable;                  /* Whether page is writable */
+  
+  /* Hash table linkage */
+  struct hash_elem hash_elem;     /* For SPT hash table */
 };
 
 /* SPT operations */
-void spt_init(struct hash *spt);
-void spt_destroy(struct hash *spt);
+void spt_init (struct hash *spt);
+void spt_destroy (struct hash *spt);
 
 /* SPT entry management */
-struct spt_entry *spt_create_entry(void *vaddr, enum page_type type, bool writable);
-bool spt_insert(struct hash *spt, struct spt_entry *entry);
-struct spt_entry *spt_lookup(struct hash *spt, const void *vaddr);
-void spt_remove(struct hash *spt, void *vaddr);
+struct spt_entry *spt_create_entry (void *vaddr, enum page_type type, 
+                                     bool writable);
+bool spt_insert (struct hash *spt, struct spt_entry *entry);
+struct spt_entry *spt_lookup (struct hash *spt, const void *vaddr);
+void spt_remove (struct hash *spt, void *vaddr);
 
 /* File-backed page setup */
-bool spt_set_file_data(struct spt_entry *entry, struct file *file, 
-                       off_t offset, size_t read_bytes);
+bool spt_set_file_data (struct spt_entry *entry, struct file *file, 
+                        off_t offset, size_t read_bytes);
 
 /* Page loading */
-bool spt_load_page(struct spt_entry *entry);
-void spt_unload_page(struct spt_entry *entry);
+bool spt_load_page (struct spt_entry *entry);
+void spt_unload_page (struct spt_entry *entry);
 
 /* Utility functions */
-bool spt_is_valid_access(struct hash *spt, const void *vaddr, bool write);
-void spt_print_entry(struct spt_entry *entry);
+bool spt_is_valid_access (struct hash *spt, const void *vaddr, bool write);
+void spt_print_entry (struct spt_entry *entry);
 
 #endif /* vm/page.h */ 
