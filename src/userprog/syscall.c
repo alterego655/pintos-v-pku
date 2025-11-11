@@ -915,11 +915,6 @@ mmap_is_valid_addr(void *addr, size_t length)
       /* Check if page already exists in SPT */
       if (spt_lookup(&cur->spt, page) != NULL)
         return false;
-      
-      /* Check if page would overlap with stack */
-      if (cur->stack_bottom != NULL && 
-          page >= (uint8_t *)cur->stack_bottom - cur->stack_size)
-        return false;
     }
   
   return true;

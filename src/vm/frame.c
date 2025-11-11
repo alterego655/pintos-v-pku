@@ -299,13 +299,10 @@ frame_evict (struct frame_entry *victim, void *new_upage)
   
   switch (spt_entry->type) 
     {
+    /* Stack pages always go to swap when evicted */
     case PAGE_STACK:
-      /* Stack pages always go to swap when evicted */
-      need_swap = true;
-      break;
-      
+    /* File-backed pages: always swap when evicted */
     case PAGE_FILE:
-      /* File-backed pages: always swap when evicted */
       need_swap = true;
       break;
       
@@ -320,6 +317,7 @@ frame_evict (struct frame_entry *victim, void *new_upage)
           
           file_write_at (spt_entry->file, victim->kpage, 
                          spt_entry->read_bytes, spt_entry->file_offset);
+
           if (!already_held) 
             fs_lock_release ();
   

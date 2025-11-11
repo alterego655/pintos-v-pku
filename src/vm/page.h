@@ -80,8 +80,4 @@ bool spt_set_file_data (struct spt_entry *entry, struct file *file,
 bool spt_load_page (struct spt_entry *entry);
 void spt_unload_page (struct spt_entry *entry);
 
-/* Utility functions */
-bool spt_is_valid_access (struct hash *spt, const void *vaddr, bool write);
-void spt_print_entry (struct spt_entry *entry);
-
 #endif /* vm/page.h */ 
